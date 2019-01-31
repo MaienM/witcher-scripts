@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -o errexit -o pipefail
 
 # Given the path of a script file, attempts to automatically merge all scripts from all mods
 
@@ -36,19 +36,19 @@ for mod in mod*; do
 
 	# Generate a patch and attempt to apply it, hunk by hunk
 	echo "> Trying to apply changes from $mod"
-	diff -a -U4 "$TARGET" "$modfile" > /tmp/patch || true
+	diff -a -U3 --ignore-blank-lines "$ORIGINAL" "$modfile" > /tmp/patch || [ $? -ne 2 ]
 	for i in {1..10000}; do
 		# Get the hunk
 		filterdiff --hunks="$i" < /tmp/patch > /tmp/hunk
 		# If the hunk is empty, we've processed all hunks for this patch, so stop the loop
 		[ -s /tmp/hunk ] || break
 		# If the hunk already seems to be applied, skip it
-		if patch -u --ignore-whitespace --dry-run < /tmp/hunk 2>&1 | grep 'previously applied' > /dev/null 2>&1; then
-			echo "Skipping already-applied hunk"
+		if [[ "$(patch -u --ignore-whitespace --dry-run "$TARGET" < /tmp/hunk 2>&1 || true)" == *'previously applied'* ]]; then
+			echo "Hunk #$i skipped (changes are already present)"
 			continue
 		fi
 		# Apply the hunk
-		patch -u --ignore-whitespace "$TARGET" < /tmp/hunk
+		patch -u --ignore-whitespace "$TARGET" < /tmp/hunk | sed "s/Hunk #1/Hunk #$i/g"
 	done
 	echo "$modfile" >> "$LOG"
 done
