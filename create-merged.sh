@@ -109,12 +109,6 @@ for mod in mod*; do
 	[ -f "$modfile" ] || continue
 	[ "$(realpath "$modfile")" == "$(realpath "$TARGET")" ] && continue
 
-	# Skip file if it is blacklisted
-	# if grep -Fx "$mod $FILENAME" ./_ignoredfiles > /dev/null 2>&1; then
-	# 	echo "> Skipping changes from $mod (blacklisted in _ignoredfiles)"
-	# 	continue
-	# fi
-
 	# Generate a patch and attempt to apply it, hunk by hunk
 	echo "> Trying to apply changes from $mod"
 	diff -a -U$DIFF_CONTEXT --ignore-blank-lines "$ORIGINAL" "$modfile" > /tmp/patch || [ $? -ne 2 ]
