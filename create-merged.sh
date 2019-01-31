@@ -43,7 +43,7 @@ doPatchCommand() {
 	fi
 
 	# Try to apply
-	patch "$@" < "$input"
+	patch --reject-file=- "$@" < "$input"
 }
 
 applyPatch() {
