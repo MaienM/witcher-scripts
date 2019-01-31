@@ -10,6 +10,7 @@ MERGE_MOD="mod0001____MergedScripts"
 TARGET="$MERGE_MOD/$FILENAME"
 LOG="$TARGET.log"
 ORIGINAL="../${FILENAME/content/content\/content0}"
+OVERRIDEDIR="_overrides/$FILENAME"
 PATCHDIR="_patches/$FILENAME"
 DIFF_CONTEXT=5
 
@@ -39,6 +40,23 @@ applyPatch() {
 }
 
 applyHunk() {
+	# Store the hunk by md5
+	hash="$(md5sum /tmp/hunk | cut -c1-32)"
+	cp /tmp/hunk "/tmp/_hunk_$hash"
+
+	# If there is an override for this hunk, use that instead
+	overridepath="$OVERRIDEDIR/$hash.patch"
+	if [ -f "$overridepath" ]; then
+		echo "Hunk #1 is using an override ($overridepath)"
+		cp "$overridepath" /tmp/hunk
+	fi
+
+	# If the hunk already seems to be applied, skip it
+	if [[ "$(patch -u --ignore-whitespace --dry-run "$TARGET" < /tmp/hunk 2>&1 || true)" == *'previously applied'* ]]; then
+		echo "Hunk #1 skipped (changes are already present)"
+		return 0
+	fi
+
 	# Try to apply the entire hunk
 	patch -u --ignore-whitespace "$TARGET" < /tmp/hunk && return 0
 
