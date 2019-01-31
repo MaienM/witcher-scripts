@@ -59,7 +59,7 @@ applyPatch() {
 
 		# Split the hunk into smaller hunks
 		for j in {1..10000}; do
-			./_scripts/splithunk.py /tmp/hunk $j /tmp/subhunk_
+			./_scripts/splithunk.py -c1 -U$DIFF_CONTEXT /tmp/hunk $j /tmp/subhunk_
 
 			# If the subhunk is empty, we've processed all subhunks for this hunk, so stop the loop
 			[ -s /tmp/subhunk_ ] || break
