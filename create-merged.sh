@@ -52,25 +52,22 @@ doPatchCommand() {
 }
 
 applyPatch() {
-	# Split the patch into hunks
+	# Split the patch into subhunks
+	rm -f /tmp/subhunk_*
+	./_scripts/splithunk.py -c1 -U$DIFF_CONTEXT "$1" /tmp/subhunk
+
+	# Loop over the hunks
 	for i in {1..10000}; do
-		filterdiff --hunks="$i" < "$1" > /tmp/hunk
+		# If there are no subhunks for this hunk, we've processed all hunks for this patch, so stop the loop
+		[ -f "/tmp/subhunk_${i}_1" ] || break
 
-		# If the hunk is empty, we've processed all hunks for this patch, so stop the loop
-		[ -s /tmp/hunk ] || break
-
-		# Store hunk by hash
-		makeHashCopy /tmp/hunk
-
-		# Split the hunk into smaller hunks
+		# Loop over the subhunks
 		for j in {1..10000}; do
-			./_scripts/splithunk.py -c1 -U$DIFF_CONTEXT /tmp/hunk $j /tmp/subhunk_
-
 			# If the subhunk is empty, we've processed all subhunks for this hunk, so stop the loop
-			[ -s /tmp/subhunk_ ] || break
+			[ -f "/tmp/subhunk_${i}_${j}" ] || break
 
 			# Fix the markings for the subhunk
-			rediff /tmp/subhunk_ > /tmp/subhunk
+			rediff "/tmp/subhunk_${i}_${j}" > /tmp/subhunk
 
 			# Store subhunk by hash
 			makeHashCopy /tmp/subhunk
