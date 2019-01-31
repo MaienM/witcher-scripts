@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -o errexit -o pipefail
+shopt -s nullglob
 
 # Given the path of a script file, attempts to automatically merge all scripts from all mods
 
@@ -9,6 +10,7 @@ MERGE_MOD="mod0001____MergedScripts"
 TARGET="$MERGE_MOD/$FILENAME"
 LOG="$TARGET.log"
 ORIGINAL="../${FILENAME/content/content\/content0}"
+PATCHDIR="_patches/$FILENAME"
 DIFF_CONTEXT=5
 
 if [ ! -f "$ORIGINAL" ]; then
@@ -22,6 +24,19 @@ mkdir -p "$(dirname "$TARGET")"
 # Copy over the original file
 cp "$ORIGINAL" "$TARGET"
 [ -f "$LOG" ] && rm "$LOG"
+
+applyPatch() {
+	for i in {1..10000}; do
+		# Get the hunk
+		filterdiff --hunks="$i" < /tmp/patch > /tmp/hunk
+
+		# If the hunk is empty, we've processed all hunks for this patch, so stop the loop
+		[ -s /tmp/hunk ] || break
+
+		# Apply the hunk
+		applyHunk | sed "s/Hunk #1/Hunk #$i/g"
+	done
+}
 
 applyHunk() {
 	# Try to apply the entire hunk
@@ -63,18 +78,12 @@ for mod in mod*; do
 	# Generate a patch and attempt to apply it, hunk by hunk
 	echo "> Trying to apply changes from $mod"
 	diff -a -U$DIFF_CONTEXT --ignore-blank-lines "$ORIGINAL" "$modfile" > /tmp/patch || [ $? -ne 2 ]
-	for i in {1..10000}; do
-		# Get the hunk
-		filterdiff --hunks="$i" < /tmp/patch > /tmp/hunk
-		# If the hunk is empty, we've processed all hunks for this patch, so stop the loop
-		[ -s /tmp/hunk ] || break
-		# If the hunk already seems to be applied, skip it
-		if [[ "$(patch -u --ignore-whitespace --dry-run "$TARGET" < /tmp/hunk 2>&1 || true)" == *'previously applied'* ]]; then
-			echo "Hunk #$i skipped (changes are already present)"
-			continue
-		fi
-		# Apply the hunk
-		applyHunk | sed "s/Hunk #1/Hunk #$i/g"
-	done
-	echo "$modfile" >> "$LOG"
-done
+	applyPatch
+done | tee "$LOG"
+
+# Apply extra patches
+for patch in "$PATCHDIR"/*.patch; do
+	echo "> Applying patch $patch"
+	cp "$patch" /tmp/patch
+	applyPatch
+done | tee -a "$LOG"
