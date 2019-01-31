@@ -27,8 +27,13 @@ mkdir -p "$(dirname "$TARGET")"
 cp "$ORIGINAL" "$TARGET"
 [ -f "$LOG" ] && rm "$LOG"
 
+hashHunk() {
+	# Ignore the first 3 lines, as changes in filenames, timestamps and/or line numbers are irrelevant
+	tail -n+4 < "$1" | md5sum | cut -c1-32
+}
+
 makeHashCopy() {
-	hash="$(md5sum "$1" | cut -c1-32)"
+	hash="$(hashHunk "$1")"
 	cp "$1" "/tmp/_$(basename "$1")_$(basename "$ORIGINAL")_$hash"
 }
 
@@ -79,25 +84,24 @@ applyPatch() {
 }
 
 applyHunk() {
-	# Store the hunk by md5
-	hash="$(md5sum "$1" | cut -c1-32)"
-	cp "$1" "/tmp/_subhunk_$(basename "$ORIGINAL")_$hash"
+	path="$1"
 
 	# If there is an override for this hunk, use that instead
+	hash="$(hashHunk "$1")"
 	overridepath="$OVERRIDEDIR/$hash.patch"
 	if [ -f "$overridepath" ]; then
 		echo "Hunk #1 is using an override ($overridepath)"
-		cp "$overridepath" "$1"
+		path="$overridepath"
 	fi
 
 	# Try to apply the entire hunk
-	doPatchCommand "$1" -u --ignore-whitespace "$TARGET" && return 0
+	doPatchCommand "$path" -u --ignore-whitespace "$TARGET" && return 0
 
 	# This failed, so now try to apply it with more fuzz
 	fuzz=3 # fuzz factor. default is 2, so no point trying with less
 	while [ $fuzz -le $PATCH_MAX_FUZZ ]; do
 		echo "Attempting to apply with more fuzz ($fuzz)"
-		doPatchCommand "$1" -u --ignore-whitespace "$TARGET" --fuzz=$fuzz && return 0
+		doPatchCommand "$path" -u --ignore-whitespace "$TARGET" --fuzz=$fuzz && return 0
 		fuzz="$((fuzz + 1))"
 	done
 
