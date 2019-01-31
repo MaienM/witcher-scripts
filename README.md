@@ -1,4 +1,4 @@
-= Witcher 3 mod scripts
+# Witcher 3 mod scripts
 
 I made these scripts because the Script Merger that most people use does not play nice with Wine, while the game itself
 does.
