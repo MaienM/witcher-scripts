@@ -9,6 +9,7 @@ MERGE_MOD="mod0001____MergedScripts"
 TARGET="$MERGE_MOD/$FILENAME"
 LOG="$TARGET.log"
 ORIGINAL="../${FILENAME/content/content\/content0}"
+DIFF_CONTEXT=5
 
 if [ ! -f "$ORIGINAL" ]; then
 	echo >&2 "Cannot find original script ($ORIGINAL)"
@@ -21,6 +22,31 @@ mkdir -p "$(dirname "$TARGET")"
 # Copy over the original file
 cp "$ORIGINAL" "$TARGET"
 [ -f "$LOG" ] && rm "$LOG"
+
+applyHunk() {
+	# Try to apply the entire hunk
+	patch -u --ignore-whitespace "$TARGET" < /tmp/hunk && return 0
+
+	# This failed, so now try to apply it with less context
+	nrcl=1 # Number of Removed Context Lines
+	while [ $nrcl -le $DIFF_CONTEXT ]; do
+		echo "Attempting to apply with less context ($((DIFF_CONTEXT - nrcl)) lines, down from $DIFF_CONTEXT)"
+		(
+			# Include the filename header lines
+			head -n2 /tmp/hunk
+			# The patch header with line numbers, changed to be correct
+			head -n3 /tmp/hunk | tail -n1 | sed "s/@@ -\\([0-9]\\+\\),\\([0-9]\\+\\) +\\([0-9]\\+\\),\\([0-9]\\+\\) @@/echo \"@@ -\$((\\1+$nrcl)),\$((\\2-$nrcl-$nrcl)) +\$((\\3+$nrcl)),\$((\\4-$nrcl-$nrcl)) @@\"/e"
+			# The diff, with n lines cut from the top and bottom
+			tail -n+$((4 + nrcl)) /tmp/hunk | head -n-$nrcl
+		) > /tmp/partialhunk
+		nrcl="$((nrcl + 1))"
+
+		patch -u --ignore-whitespace "$TARGET" < /tmp/partialhunk && return 0
+	done
+
+	# None of the attempts succeeded
+	return 1
+}
 
 # Find mods that have a version of this file
 for mod in mod*; do
@@ -36,7 +62,7 @@ for mod in mod*; do
 
 	# Generate a patch and attempt to apply it, hunk by hunk
 	echo "> Trying to apply changes from $mod"
-	diff -a -U3 --ignore-blank-lines "$ORIGINAL" "$modfile" > /tmp/patch || [ $? -ne 2 ]
+	diff -a -U$DIFF_CONTEXT --ignore-blank-lines "$ORIGINAL" "$modfile" > /tmp/patch || [ $? -ne 2 ]
 	for i in {1..10000}; do
 		# Get the hunk
 		filterdiff --hunks="$i" < /tmp/patch > /tmp/hunk
@@ -48,7 +74,7 @@ for mod in mod*; do
 			continue
 		fi
 		# Apply the hunk
-		patch -u --ignore-whitespace "$TARGET" < /tmp/hunk | sed "s/Hunk #1/Hunk #$i/g"
+		applyHunk | sed "s/Hunk #1/Hunk #$i/g"
 	done
 	echo "$modfile" >> "$LOG"
 done
