@@ -114,7 +114,7 @@ for mod in mod*; do
 
 	# Generate a patch and attempt to apply it, hunk by hunk
 	echo "> Trying to apply changes from $mod"
-	diff -a -U$DIFF_CONTEXT --ignore-blank-lines "$ORIGINAL" "$modfile" > /tmp/patch || [ $? -ne 2 ]
+	diff -a -U$DIFF_CONTEXT --ignore-blank-lines "$ORIGINAL" "$modfile" | grep -va 'No newline at end of file' > /tmp/patch || [ $? -ne 2 ]
 	applyPatch /tmp/patch
 done | tee "$LOG"
 
