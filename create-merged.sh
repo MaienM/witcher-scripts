@@ -13,6 +13,7 @@ ORIGINAL="../${FILENAME/content/content\/content0}"
 OVERRIDEDIR="_overrides/$FILENAME"
 PATCHDIR="_patches/$FILENAME"
 DIFF_CONTEXT=5
+DIFF_CONTEXT_MIN=2
 
 if [ ! -f "$ORIGINAL" ]; then
 	echo >&2 "Cannot find original script ($ORIGINAL)"
@@ -27,51 +28,57 @@ cp "$ORIGINAL" "$TARGET"
 [ -f "$LOG" ] && rm "$LOG"
 
 applyPatch() {
+	# Split the patch into hunks
 	for i in {1..10000}; do
-		# Get the hunk
-		filterdiff --hunks="$i" < /tmp/patch > /tmp/hunk
+		filterdiff --hunks="$i" < "$1" > /tmp/hunk
 
 		# If the hunk is empty, we've processed all hunks for this patch, so stop the loop
 		[ -s /tmp/hunk ] || break
 
-		# Apply the hunk
-		applyHunk | sed "s/Hunk #1/Hunk #$i/g"
+		# Split the hunk into smaller hunks
+		for j in {1..10000}; do
+			./_scripts/splithunk.py /tmp/hunk $j /tmp/subhunk_
+
+			# If the subhunk is empty, we've processed all subhunks for this hunk, so stop the loop
+			[ -s /tmp/subhunk_ ] || break
+
+			# Fix the markings for the subhunk
+			rediff /tmp/subhunk_ > /tmp/subhunk
+
+			# Apply the subhunk
+			applyHunk /tmp/subhunk | sed "s/Hunk #1/Hunk #$i.$j/g"
+		done
 	done
 }
 
 applyHunk() {
 	# Store the hunk by md5
-	hash="$(md5sum /tmp/hunk | cut -c1-32)"
-	cp /tmp/hunk "/tmp/_hunk_$hash"
+	hash="$(md5sum "$1" | cut -c1-32)"
+	cp "$1" "/tmp/_subhunk_$(basename "$ORIGINAL")_$hash"
 
 	# If there is an override for this hunk, use that instead
 	overridepath="$OVERRIDEDIR/$hash.patch"
 	if [ -f "$overridepath" ]; then
 		echo "Hunk #1 is using an override ($overridepath)"
-		cp "$overridepath" /tmp/hunk
+		cp "$overridepath" "$1"
 	fi
 
 	# If the hunk already seems to be applied, skip it
-	if [[ "$(patch -u --ignore-whitespace --dry-run "$TARGET" < /tmp/hunk 2>&1 || true)" == *'previously applied'* ]]; then
+	if [[ "$(patch -u --ignore-whitespace --dry-run "$TARGET" < "$1" 2>&1 || true)" == *'previously applied'* ]]; then
 		echo "Hunk #1 skipped (changes are already present)"
 		return 0
 	fi
 
 	# Try to apply the entire hunk
-	patch -u --ignore-whitespace "$TARGET" < /tmp/hunk && return 0
+	patch -u --ignore-whitespace "$TARGET" < "$1" && return 0
+	return 1
 
 	# This failed, so now try to apply it with less context
 	nrcl=1 # Number of Removed Context Lines
-	while [ $nrcl -le $DIFF_CONTEXT ]; do
+	while [ $nrcl -le $((DIFF_CONTEXT - DIFF_CONTEXT_MIN)) ]; do
 		echo "Attempting to apply with less context ($((DIFF_CONTEXT - nrcl)) lines, down from $DIFF_CONTEXT)"
-		(
-			# Include the filename header lines
-			head -n2 /tmp/hunk
-			# The patch header with line numbers, changed to be correct
-			head -n3 /tmp/hunk | tail -n1 | sed "s/@@ -\\([0-9]\\+\\),\\([0-9]\\+\\) +\\([0-9]\\+\\),\\([0-9]\\+\\) @@/echo \"@@ -\$((\\1+$nrcl)),\$((\\2-$nrcl-$nrcl)) +\$((\\3+$nrcl)),\$((\\4-$nrcl-$nrcl)) @@\"/e"
-			# The diff, with n lines cut from the top and bottom
-			tail -n+$((4 + nrcl)) /tmp/hunk | head -n-$nrcl
-		) > /tmp/partialhunk
+		./_scripts/splithunk.py "$1" 1 /tmp/partialhunk_ -c100 -U$((DIFF_CONTEXT - nrcl))
+		rediff /tmp/partialhunk_ > /tmp/partialhunk
 		nrcl="$((nrcl + 1))"
 
 		patch -u --ignore-whitespace "$TARGET" < /tmp/partialhunk && return 0
@@ -96,7 +103,7 @@ for mod in mod*; do
 	# Generate a patch and attempt to apply it, hunk by hunk
 	echo "> Trying to apply changes from $mod"
 	diff -a -U$DIFF_CONTEXT --ignore-blank-lines "$ORIGINAL" "$modfile" > /tmp/patch || [ $? -ne 2 ]
-	applyPatch
+	applyPatch /tmp/patch
 done | tee "$LOG"
 
 # Apply extra patches
