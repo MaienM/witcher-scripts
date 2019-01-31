@@ -13,7 +13,7 @@ ORIGINAL="../${FILENAME/content/content\/content0}"
 OVERRIDEDIR="_overrides/$FILENAME"
 PATCHDIR="_patches/$FILENAME"
 DIFF_CONTEXT=5
-DIFF_CONTEXT_MIN=2
+PATCH_MAX_FUZZ=6
 
 if [ ! -f "$ORIGINAL" ]; then
 	echo >&2 "Cannot find original script ($ORIGINAL)"
@@ -73,15 +73,12 @@ applyHunk() {
 	patch -u --ignore-whitespace "$TARGET" < "$1" && return 0
 	return 1
 
-	# This failed, so now try to apply it with less context
-	nrcl=1 # Number of Removed Context Lines
-	while [ $nrcl -le $((DIFF_CONTEXT - DIFF_CONTEXT_MIN)) ]; do
-		echo "Attempting to apply with less context ($((DIFF_CONTEXT - nrcl)) lines, down from $DIFF_CONTEXT)"
-		./_scripts/splithunk.py "$1" 1 /tmp/partialhunk_ -c100 -U$((DIFF_CONTEXT - nrcl))
-		rediff /tmp/partialhunk_ > /tmp/partialhunk
-		nrcl="$((nrcl + 1))"
-
-		patch -u --ignore-whitespace "$TARGET" < /tmp/partialhunk && return 0
+	# This failed, so now try to apply it with more fuzz
+	fuzz=3 # fuzz factor. default is 2, so no point trying with less
+	while [ $fuzz -le $PATCH_MAX_FUZZ ]; do
+		echo "Attempting to apply with more fuzz ($fuzz)"
+		patch -u --ignore-whitespace "$TARGET" --fuzz=$fuzz < /tmp/partialhunk && return 0
+		fuzz="$((fuzz + 1))"
 	done
 
 	# None of the attempts succeeded
