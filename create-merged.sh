@@ -71,7 +71,9 @@ applyPatch() {
 			makeHashCopy /tmp/subhunk
 
 			# Apply the subhunk
-			applyHunk /tmp/subhunk | sed "s/Hunk #1/Hunk #$i.$j/g"
+			applyHunk /tmp/subhunk \
+				| grep -v '1 out of 1 hunk FAILED' \
+				| sed "s/Hunk #1/Hunk #$i.$j/g; s/FAILED/failed with the current settings/g"
 		done
 	done
 }
@@ -100,6 +102,7 @@ applyHunk() {
 	done
 
 	# None of the attempts succeeded
+	echo "Hunk #1 FAILED COMPLETELY"
 	return 1
 }
 
